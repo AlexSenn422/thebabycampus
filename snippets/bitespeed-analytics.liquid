@@ -1,0 +1,352 @@
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script>
+    const DBURL = "https://app.bitespeed.co/database";
+    var indexOfwww = location.hostname.indexOf("www");
+    var shopDomainStripped = (indexOfwww === -1 ? "." + location.hostname : location.hostname.substr(indexOfwww + 3));
+    function getCookie(name) {
+        var value = "; " + document.cookie;
+        var parts = value.split("; " + name + "=");
+        if (parts.length == 2) return parts.pop().split(";").shift();
+    }
+    function createRef(){
+        let uuid = create_UUID();
+        document.cookie = "refb="+uuid+";expires="+ new Date(new Date().setFullYear(new Date().getFullYear() + 10))+ ";domain=" + shopDomainStripped +"; path=/";
+        return uuid;
+    }
+    function createSsid() {
+        let uuid = create_UUID();
+        document.cookie = "ssid="+uuid+ ";domain=" + shopDomainStripped +"; path=/";
+        return uuid;
+    }
+    function create_UUID(){
+        var dt = new Date().getTime();
+        var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = (dt + Math.random()*16)%16 | 0;
+            dt = Math.floor(dt/16);
+            return (c=='x' ? r :(r&0x3|0x8)).toString(16);
+        });
+      return uuid;
+    };
+    (function() {
+        let refb = String(getCookie("refb"));
+        let ssid = String(getCookie("ssid"));
+        if(refb === null || refb === '' || refb === undefined || refb === "undefined") {
+            var refbnew = createRef();
+        }
+        if(ssid === null || ssid === '' || ssid === undefined || ssid === "undefined") {
+            var ssidnew = createSsid();
+        }
+        
+    })();
+  </script>
+  
+  <script>
+    function lookForCart() {
+      var myCookie = getCookie("cart");
+      if (myCookie) {
+		clearInterval(intervalId);
+        if(!getCookie(`${myCookie}`)) {
+        document.cookie = `${myCookie}=true` + ";domain=" + shopDomainStripped + "; path=/";
+        sendToWebhook(myCookie);
+        }
+      }
+    }
+    function sendToWebhook(cart) {
+    	let axiosConfig = {
+		    headers: {
+			    "Access-Control-Allow-Origin": "*"
+		    }
+	    };
+
+    	let url = `${DBURL}/api/shopifyCustomer/create`;
+        let refb = getCookie("refb");
+        if(refb === null || refb === '' || refb === undefined || refb === "undefined") {
+        }
+        else {
+	    var postData = {
+    		  cartToken: cart,
+		      id: String(refb),
+		      shopifyShopDomain: '{{shop.permanent_domain}}'
+	    };      
+    	axios.post(url,postData, axiosConfig)
+	      .then((res) => {
+
+    	  })
+	      .catch((err) => {
+	      	console.log("AXIOS ERROR: ", err);
+    	  })
+        }
+	};
+    let intervalId = setInterval(() => {lookForCart()},1000);
+  </script>
+
+  <script name="bitespeed-tracking-tag">    
+    let axiosConfig = {
+      headers: {
+	      "Access-Control-Allow-Origin": "*"
+      }
+    };
+    function analyticsPost(postData) {
+      let analyticsUrl = `${DBURL}/webhook/browserSession`;
+    	postData.shopifyShopDomain = '{{shop.permanent_domain}}';
+     	postData.ref = getCookie("refb");
+      	postData.ssid= getCookie("ssid");
+      	axios.post(analyticsUrl, postData, axiosConfig)
+        	.then((res) => {
+	        	return;
+        	})
+        	.catch((err) => {
+        console.log("AXIOS ERROR: ", err);
+        })
+    }
+(function(){
+    var bitespeedLayer = {
+        cartPollInterval: 2000
+    }
+    var config = {
+        linker: {
+            domains: ['shopify.com', 'rechargeapps.com', 'recurringcheckout.com', 'carthook.com', 'checkout.com']
+        },
+        anonymize_ip: true,
+        allow_ad_personalization_signals: true,
+        page_title: removePii(document.title),
+        page_location: removePii(document.location.href)
+    }
+    var pageView = function() {
+            {%if customer %}
+            var postData = {
+                "at" : new Date(),
+                "type": "customerIdentified",
+                "event": {
+                    id: '{{customer.id}}',
+                    address: '{{customer.default_address}}',
+                    email: '{{customer.email}}',
+                    name: '{{customer.first_name}} {{customer.last_name}}',
+                    phone: '{{customer.phone}}',
+                }
+            }
+            analyticsPost(postData);
+            {% endif %}
+    };
+    // delay page firing until the page is visible
+    if (document.hidden === true) {
+        var triggeredPageView = false;
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && !triggeredPageView) {
+                pageView();
+                triggeredPageView = true;
+            }
+        });
+    } else {
+        pageView()
+    }
+    var hasLocalStorage = (function() {
+        try {
+            localStorage.setItem('bitespeed_test_storage', 'test');
+            localStorage.removeItem('bitespeed_test_storage');
+            return true;
+        } catch (ex) {
+            return false;
+        }
+    })();
+    bitespeedLayer.ecommerce = {
+        'currencyCode' : '{{shop.currency}}',
+        'impressions' : []
+    };
+    {% if template.name == 'search' and search.performed %}
+        var searchResults = {{search.results | json}} || {};
+        let searchProducts=[];
+  for(let i = 0; i < searchResults.length; i++) {
+    let element = searchResults[i];
+    searchProducts.push({
+                id: element.id,
+                name: element.title,
+                price: (element.price/100).toFixed(0),
+                brand: element.vendor,
+                category: element.type,
+                variants: element.variants.map(function(variant) { return { id: variant.id, sku : variant.sku } }),
+                quantity: 1, 
+                handle: element.handle  
+            }
+         )
+  }
+        var searchTerm = "{{search.terms}}";
+        var postData = {
+            "at": new Date(),
+            "type": "productSearched",
+            "event" : {
+                "searchTerm": searchTerm,
+                "searchResults": searchProducts
+              }
+        }
+        analyticsPost(postData);        
+  {% endif %}
+    {%if product%}
+        var product = {{ product | json }};
+        if (product && !product.error) {
+            bitespeedLayer.ecommerce.detail = {products: []}
+            bitespeedLayer.ecommerce.detail.products.push({
+                id: product.id,
+                name: product.title,
+                price: (product.price/100).toFixed(0),
+                brand: product.vendor,
+                category: product.type,
+                variants: product.variants.map(function(variant) { return { id: variant.id, sku : variant.sku } }),
+                quantity: 1, 
+                handle: product.handle
+            });
+        }
+    {% else %}
+        var collectionNames = [];
+        {% if collection.handle == "all" %}
+            var collections = {{collections | json}};
+        {% else %}
+            var collections = [{{collection | json}}];
+        {% endif %}
+        if (collections && !collections.error) {
+            collections.forEach(function(c){
+                if (c) collectionNames.push(c.handle);
+            });
+        }
+        var collectionProducts = {{ collection.products | json }};
+        if (collectionProducts && !collectionProducts.error) {
+            collectionNames.forEach(function(c){
+                var pos = 1;
+                collectionProducts.forEach(function(p){
+                    bitespeedLayer.ecommerce.impressions.push({
+                        id: p.id,
+                        product_id: p.id,
+                        name: p.title,
+                        price: (p.price/100).toFixed(0),
+                        brand: p.vendor,
+                        category: p.type,
+                        list_position : pos,
+                        variants : p.variants.map(function(variant) { return { id: variant.id , sku : variant.sku } }),
+                        list_name : location.pathname,
+                        list : location.pathname, // duplicate property for GTM
+                        handle : p.handle
+                    })
+                    pos++
+                });
+            });
+        }
+    {% endif%}
+    bitespeedLayer.ecommerce.impressions = getUniqueProducts(bitespeedLayer.ecommerce.impressions);
+    function getUniqueProducts(array){
+        var u = {}, a = [];
+        for(var i = 0, l = array.length; i < l; ++i){
+            if(u.hasOwnProperty(array[i].id)) {
+                continue;
+            }
+            a.push(array[i]);
+            u[array[i].id] = 1;
+        }
+        return a;
+    };
+    var loadScript = function(url, callback){
+        var script = document.createElement("script")
+        script.type = "text/javascript";
+        if (script.readyState){  /* IE */
+            script.onreadystatechange = function(){
+                if (script.readyState == "loaded" ||
+                        script.readyState == "complete"){
+                    script.onreadystatechange = null;
+                    callback();
+                }
+            };
+        } else {  /* Others */
+            script.onload = function(){
+                callback();
+            };
+        }
+        script.src = url;
+        document.getElementsByTagName("head")[0].appendChild(script);
+    }
+var ldTracker = function(jQuery){
+    jQuery(document).ready(function(){
+        if(bitespeedLayer && bitespeedLayer.ecommerce){
+            /* run list, product, and clientID scripts everywhere */
+            listViewScript();
+            productPageScript();
+        }
+    })
+    function listViewScript(){
+        if (!bitespeedLayer.ecommerce.impressions || !bitespeedLayer.ecommerce.impressions.length) return;
+        window.setTimeout(function(){
+            var postData = {
+            "at" : new Date(),
+            "type" : "productListViewed",
+              "event" : {
+                    list_id: bitespeedLayer.ecommerce.impressions[0].list,
+                    products: bitespeedLayer.ecommerce.impressions
+              }
+                };
+                analyticsPost(postData);
+        },500) /* wait for pageview to fire first */
+        /* product list clicks */
+        jQuery('a')
+            .filter(function(){ return this.href.indexOf('/products') !== -1}) /* only add event to products */
+            .click(function(ev){
+                ev.preventDefault();
+                var self = this;
+                var clickedProductDetails = bitespeedLayer.ecommerce.impressions.filter(function(product){
+                    var linkSplit = self.href.split('/products/')
+                    var productLink = linkSplit && linkSplit[1]
+                    return productLink == product.handle
+                })[0];
+                if (clickedProductDetails) {
+                    /* only wait 1 second before redirecting */
+                    self.timeout = window.setTimeout(function(){
+                        document.location = self.href;
+                    },1500)
+                    if(hasLocalStorage)
+                        localStorage.list = location.pathname;
+                    clickedProductDetails.list_name = location.pathname
+                        clickedProductDetails.list_id = location.pathname                 
+                        var postData = {
+                              "at" : new Date(),
+                           "type" : "productClicked",
+              "event" : clickedProductDetails
+                        }
+                analyticsPost(postData);
+                }
+                else document.location = self.href;
+            })
+    }
+    async function productPageScript(){
+        var product = bitespeedLayer.ecommerce.detail
+            && bitespeedLayer.ecommerce.detail.products
+            && bitespeedLayer.ecommerce.detail.products[0]
+        if (product) {
+            if(hasLocalStorage) product.list_name = localStorage.list   
+                if(hasLocalStorage) product.list_id = localStorage.list         
+          var postData = {
+            "at" : new Date(),
+            "type" : "productViewed",
+            "event" : product
+          }         
+          analyticsPost(postData);
+        }
+    }
+}
+if(typeof jQuery === 'undefined'){
+    loadScript('//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js', function(){
+        jQuery191 = jQuery.noConflict(true);
+        ldTracker(jQuery191);
+        });
+    } else {
+        ldTracker(jQuery);
+    }
+    function removePii(string) {
+        var piiRegex = {
+            "email": /[s&amp;/,=]([a-zA-Z0-9_.+-]+(@|%40)[a-zA-Z0-9-]+.[a-zA-Z0-9-.]+)($|[s&amp;/,])/,
+            "postcode": /[s&amp;/,=]([A-Z]{1,2}[0-9][0-9A-Z]?(s|%20)[0-9][A-Z]{2})($|[s&amp;/,])/,
+        };
+        var dlRemoved = string;
+        for (key in piiRegex) {
+            dlRemoved = dlRemoved.replace(piiRegex[key], 'REMOVED');
+        }
+        return dlRemoved;
+    }
+})()
+</script>
